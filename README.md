@@ -7,12 +7,14 @@ This script is for planning your customized artifact farming route in Genshin Im
 基于整数线性规划求解器，我提供了一个用于规划原神圣遗物跑图路线的工具
 
 Based on an integer linear programming solver, I provide a tool for planning the route of artifats farming in Genshin 
+
+主要的数据收集工作由我独立完成，并由NGA众坛友补充，在此感谢！特别感谢 @彼音星垠 对本项目的大力支持！
+
 Main data collections done by myself, as well some contributions form NGA user @彼音星垠 
 
 基准速度测试基于罗万早亚配队，记录了每一条圣遗物路线的跑图耗时（可在Data文件夹中的路线设计文件查看）
 
 Benchmark speed test was done through using team Rosaria, Kazuha, Sayu and Kaeya, logged speed information for each point-route at `./Data/路线设计.xlsx`
-
 
 # Supporting Information
 具体点位名称、位置、刷新时间、掉落等信息请见[我的NGA版头贴](https://nga.178.com/read.php?tid=27875210)
