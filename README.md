@@ -37,3 +37,5 @@ See some prepared instruction videos for high-efficient farming route at my Blib
 3. Load utility functions
 
 4. Run funtion with your customized parameters(numbers of points, prefered routes, wether uses a Portable Waypoint, etc.)
+
+5. Use `write_route = TURE` in the planning functions to save the planned route to `./Results/`
