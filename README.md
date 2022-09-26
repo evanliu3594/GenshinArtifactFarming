@@ -1,6 +1,7 @@
 # GIArtifactFarmingRoutePlanning
 这是一个用来规划圣遗物狗粮路线的脚本工具
-Planning tools for planning your customized artifact farming route in Genshin Impact
+
+This is a lanning tools for planning your customized artifact farming route in Genshin Impact
 
 具体点位信息请见：[我的NGA版头贴](https://nga.178.com/read.php?tid=27875210)
 My Blibili Account：@游侠Evan
