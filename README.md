@@ -3,9 +3,25 @@
 
 This script is for planning your customized artifact farming route in Genshin Impact
 
+# Gener
+基于整数线性规划求解器，我提供了一个用于规划原神圣遗物跑图路线的工具
+
+Based on an integer linear programming solver, I provide a tool for planning the route of artifats farming in Genshin 
+Main data collections done by myself, as well some contributions form NGA user @彼音星垠 
+
+基准速度测试基于罗万早亚配队，记录了每一条圣遗物路线的跑图耗时（可在Data文件夹中的路线设计文件查看）
+
+Benchmark speed test was done through using team Rosaria, Kazuha, Sayu and Kaeya, logged speed information for each point-route at `./Data/路线设计.xlsx`
+
+
+# Supporting Information
+具体点位名称、位置、刷新时间、掉落等信息请见[我的NGA版头贴](https://nga.178.com/read.php?tid=27875210)
+
 See detailed loot locations at (sry for only in Chinese))：[My NGA Post](https://nga.178.com/read.php?tid=27875210)
 
-See some prepared instructions for high-efficient farming route at my Blibili Spaces(sry for only in Chinese)：[@游侠Evan](https://space.bilibili.com/1897138)
+一些现成的跑图路线攻略视频请见我的[Bilibili主页](https://space.bilibili.com/1897138)
+
+See some prepared instruction videos for high-efficient farming route at my Blibili Spaces(sry for only in Chinese)：[@游侠Evan](https://space.bilibili.com/1897138)
 
 ## Requirements for this script:
 - R语言
@@ -20,4 +36,4 @@ See some prepared instructions for high-efficient farming route at my Blibili Sp
 
 3. Load utility functions
 
-4. Run funtion
+4. Run funtion with your customized parameters(numbers of points, prefered routes, wether uses a Portable Waypoint, etc.)
