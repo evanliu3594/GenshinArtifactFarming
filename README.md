@@ -1,4 +1,4 @@
-# GIArtifactFarmingRoutePlanning
+# GenshinArtifactFarming
 这是一个用来规划原神圣遗物狗粮路线的脚本工具。
 
 This script is for planning your customized artifact farming route in Genshin Impact.
