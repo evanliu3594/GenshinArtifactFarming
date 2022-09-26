@@ -1,0 +1,384 @@
+# ---- Project 圣遗物狗粮路线效率优化---- #
+#                     Coded by Yifan.LIU  #
+
+# Env. Settings----
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(gurobi)
+
+simpledate <- function() format(Sys.Date(),"%y%m%d")
+
+hex_encode <- function(x) x %>% 
+  str_replace_all("1[0-5]",\(num) as.integer(num) %>% as.hexmode)
+
+hex_decode <- function(x) x %>% 
+  str_replace_all('[a-f]',\(hex) as.hexmode(hex) %>% as.integer)
+
+# Route_simplify <- function(Route) Route %>%
+#   str_split("—", simplify = T) %>% as.data.frame %>% rownames_to_column('RID') %>%
+#   pivot_longer(cols = starts_with('V'),values_to = 'P') %>% filter(P != '') %>% 
+#   separate(P,into = c('LOC','NUM'),'(?<=[\u4e00-\u9fa5])(?=[0-9])') %>%
+#   group_by(RID) %>% mutate(LOC = if_else(duplicated(LOC),"",LOC)) %>%
+#   unite(P, LOC:NUM,sep = '',na.rm = T) %>% 
+#   summarise(R_simp = paste(P,collapse = "-")) %>%
+#   arrange(as.integer(RID)) %>% pull(R_simp)
+ 
+# system.time(
+#   Route %>%
+#     str_split("—", simplify = T) %>% as.data.frame %>% rownames_to_column('RID') %>%
+#     pivot_longer(cols = starts_with('V'),values_to = 'P') %>% filter(P != '') %>% 
+#     separate(P,into = c('LOC','NUM'),'(?<=[\u4e00-\u9fa5])(?=[0-9])') %>%
+#     group_by(RID) %>% mutate(LOC = if_else(duplicated(LOC),"",LOC)) %>%
+#     unite(P, LOC:NUM,sep = '',na.rm = T) %>% 
+#     summarise(R_simp = paste(P,collapse = "-")) %>%
+#     arrange(as.integer(RID)) %>% pull(R_simp)
+# )
+
+Route_simplify <- function(Route) Route %>% strsplit("—") %>% 
+  map_chr(function(x) {
+    mx1 <- str_match(x, '([\u4e00-\u9fa5]+)([0-9]?-?[0-9]?)') %>% .[,-1]
+    
+    mx1[duplicated(mx1[, 1]), 1] <- ''
+    
+    apply(mx1, 1, paste, collapse  = '') %>% paste(collapse = '—')
+  })
+
+# system.time(
+#   Route %>% str_split("—") %>%
+#     map_chr(function(x) {
+#       mx1 <- x %>% str_match('([\u4e00-\u9fa5]+)([0-9]?-?[0-9]?)') %>% .[, -1]
+#       mx1[duplicated(mx1[, 1]), 1] <- ''
+#       apply(mx1, 1, paste, collapse  = '') %>% paste(collapse = '—')
+#   })
+# )
+
+# Data load----
+
+ToT <- 5 # Time(s) of Teleport
+
+lootRate <- function(no_mora_p, mora_p) {
+  c(rep(c(rep(1, 65), rep(2, 35)), no_mora_p),
+    rep(c(rep(1, 50), rep(2, 50)), mora_p)) %>% 
+    sample(1E6, replace = T) %>% mean %>% round(3)
+}
+
+mora_p_Rate <- c(
+  '1.350' = 0, '1.400' = 1/3, '1.410' = 2/5, '1.425' = 1/2, '1.450' = 2/3, '1.500' = 1
+)
+
+Route_design <- read_xlsx('./1.Data/路线设计.xlsx') %>% 
+  rename(time = `耗时(s)`) %>% 
+  mutate(`路线` = `路线` %>% hex_encode)
+
+PointData <- read_xlsx('点位描述.xlsx', range = cell_cols("A:F")) %>%
+  rename(`点位` = `编号`) %>%
+  filter(`刷新时间` != '刷新时间') %>% 
+  mutate(`点位` = `点位` %>% hex_encode) %>% 
+  mutate(across(c(`数量`, `刷新时间`,`掉落期望`), as.numeric))
+
+RouteData <- Route_design %>% mutate(
+  `路线` %>% strsplit("—") %>% map_dfr(
+    ~ data.frame(`点位` = .x[-1]) %>% left_join(PointData, by = "点位") %>%
+      mutate(mora_drop = mora_p_Rate[format(`掉落期望`, nsmall = 3)] * `数量` * 150) %>%
+      summarise(
+        `点数` = sum(`数量`),
+        `期望摩拉` = sum(mora_drop),
+        `期望经验` = sum(`数量` * `掉落期望` * 420)
+      )),
+  timeTP = time + ToT,
+  `狗粮效率(经验/s)` = `期望经验` / timeTP,
+  `综合资源掉落` = (期望摩拉 + `期望经验`),
+  `综合资源效率` = `综合资源掉落`/timeTP
+)
+
+
+# PointData %>% select(`点位`,`数量`,`刷新时间`,`掉落期望`) %>% 
+#   write_xlsx('./2.Result/点位经验.xlsx')
+
+RouteData %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) %>% 
+  write_xlsx('./2.Result/路线数据.xlsx')
+
+# Gurobi
+
+# N+1 124 ver----
+
+USE.MOUNT = F
+
+must_P <- c("—狸猫3—雷1","—熔炉1","—高台1—炉心6","—洞1(?!—)") %>% paste(collapse = '|')
+
+RouteData$`路线` %>% enframe %>% 
+  mutate(R_point = strsplit(value,'—') %>% map(~ .x[-1])) %>% 
+  unnest(R_point) %>% pull(R_point) %>% (\(x) x[duplicated(x)]) %>% unique
+
+dup_P <- c("嘉铭1","盗宝1","矿架2","吊机1","观测1","愚人1", "石厅路1","奥藏山3",
+           "华光林1","绝云间2","碧水原2","碧水原4","客栈2","石像1","藏宝洞1" ,
+           "水帘洞1","笈名1","知比1","清籁丸1","营地2","木船1","火1","狸猫5",
+           "炮1","雷1","熔炉1","炉心1")
+
+cons.mx <- c(must_P,'锚点',dup_P) %>% map_dfr(
+  ~ str_detect(RouteData$`路线`,.x) %>% set_names(1:nrow(RouteData))
+) %>% as.matrix
+
+model124 <- list(
+  A = rbind(RouteData$点数,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteData$timeTP,weight = 1, priority = 10),
+    `2` = list(objn = RouteData$`期望经验`,weight = -1)),
+  rhs = c(124, 4, USE.MOUNT, rep(1,nrow(cons.mx) - 2)),
+  sense = c('=', '=', '=', rep('<=',nrow(cons.mx) - 2)),
+  vtype  = 'B'
+)
+
+solve124 <- gurobi(model124)
+
+Route124 <- RouteData[as.logical(solve124$x),] 
+
+Route124 %>% summarise(time = sum(timeTP)/60)
+
+RouteSupp <- Route124 %>% pull(`路线`) %>% strsplit('—') %>% 
+  map_dfr(~ data.frame(`点位` = .x[-1])) %>% left_join(PointData, by = '点位') %>% 
+  filter(刷新时间 == 24) %>% pull(`点位`) %>% str_c('—', ., collapse = "|") %>% 
+  (\(x) RouteData %>% filter(str_detect(`路线`,str_c(x,'|锚点'),negate = T)))
+
+cons.mx <- RouteSupp %>% pull(`路线`) %>% strsplit("—") %>% 
+  map(~.x[-1]) %>% unlist %>% unique %>% str_c("—",.) %>% 
+  map(~ str_detect(RouteSupp$`路线`,.x)) %>% do.call(rbind,.)
+
+modelSupp <- list(
+  A = rbind(RouteSupp$`点数`,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteSupp$timeTP,weight = 1,priority = 100),
+    `2` = list(objn = RouteSupp$`期望经验`,weight = -1)),
+  rhs = c(99 + max(RouteSupp$`点数`),rep(1,nrow(cons.mx))),
+  sense = c('=', rep('<=',nrow(cons.mx))),
+  vtype  = 'B'
+)
+  
+solveSupp <- gurobi(modelSupp)
+
+list(
+  the_N = Route124 %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify),
+  the_1 = RouteSupp[as.logical(solveSupp$x), ] %>% 
+    mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) 
+) %>% write_xlsx(str_glue('./2.Result/Gurobi_Route_Nplus1_ver124p_{simpledate()}.xlsx'))
+
+# N+1 119 ver====
+
+USE.MOUNT = T
+
+must_P <- "—营地1—清籁丸1"
+
+RouteData$`路线` %>% enframe %>% 
+  mutate(R_point = strsplit(value,'—') %>% map(~ .x[-1])) %>% 
+  unnest(R_point) %>% pull(R_point) %>% (\(x) x[duplicated(x)]) %>% unique
+
+dup_P <- c("嘉铭1","盗宝1","矿架2","吊机1","观测1","愚人1", "石厅路1","奥藏山3",
+           "华光林1","绝云间2","碧水原2","碧水原4","客栈2","石像1","藏宝洞1" ,
+           "水帘洞1","笈名1","知比1","清籁丸1","营地2","木船1","火1","狸猫5",
+           "炮1","雷1","熔炉1","炉心1")
+
+cons.mx <- c(must_P,'锚点',dup_P) %>% map_dfr(
+  ~ str_detect(RouteData$`路线`,.x) %>% set_names(1:nrow(RouteData))
+) %>% as.matrix
+
+model119 <- list(
+  A = rbind(RouteData$点数,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteData$timeTP,weight = 1, priority = 10),
+    `2` = list(objn = RouteData$`期望经验`,weight = -1)),
+  rhs = c(119, 1, USE.MOUNT, rep(1,nrow(cons.mx) - 2)),
+  sense = c('=', '=', '=', rep('<=',nrow(cons.mx) - 2)),
+  vtype  = 'B'
+)
+
+solve119 <- gurobi(model119)
+
+Route119 <- RouteData[as.logical(solve119$x),] 
+
+Route119 %>% summarise(time = sum(timeTP)/60)
+
+RouteSupp <- Route119 %>% pull(`路线`) %>% strsplit('—') %>% 
+  map_dfr(~ data.frame(`点位` = .x[-1])) %>% left_join(PointData, by = '点位') %>% 
+  filter(刷新时间 == 24) %>% pull(`点位`) %>% str_c('—', ., collapse = "|") %>% 
+  (\(x) RouteData %>% filter(str_detect(`路线`,x,negate = T)))
+
+cons.mx <- RouteSupp %>% pull(`路线`) %>% strsplit("—") %>% 
+  map(~.x[-1]) %>% unlist %>% unique %>% str_c("—",.) %>% 
+  map(~ str_detect(RouteSupp$`路线`,.x)) %>% do.call(rbind,.)
+
+modelSupp <- list(
+  A = rbind(RouteSupp$`点数`,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteSupp$timeTP,weight = 1,priority = 100),
+    `2` = list(objn = RouteSupp$`期望经验`,weight = -1)),
+  rhs = c(99 + max(RouteSupp$`点数`),rep(1,nrow(cons.mx))),
+  sense = c('=', rep('<=',nrow(cons.mx))),
+  vtype  = 'B'
+)
+
+solveSupp <- gurobi(modelSupp)
+
+list(
+  the_N = Route119 %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify),
+  the_1 = RouteSupp[as.logical(solveSupp$x), ] %>% 
+    mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) 
+) %>% write_xlsx(str_glue('./2.Result/Gurobi_Route_Nplus1_ver119p_{simpledate()}.xlsx'))
+
+# AB ----
+gurobi_solve_AB <- function(n_point, write_route = F) {
+  
+  FastFresh <- PointData %>% filter(`刷新时间` != 24) %>% pull(`点位`)
+  
+  RouteAB <- bind_rows(
+    RouteData,
+    RouteData[RouteData %>% pull(`路线`) %>% strsplit("—") %>% 
+                map_dbl(~ prod(.x[-1] %in% FastFresh)) %>% as.logical, ]
+  )
+  
+  cons.mx <- PointData %>% pull(`点位`) %>% str_c('—',.) %>% c('锚点', .) %>% 
+    set_names %>% map(~ str_detect(RouteAB$路线, .x)) %>% do.call(rbind, .)
+  
+  cons.rhs <- PointData %>% mutate(rhs = if_else(`刷新时间` == 24, 1, 2)) %>%
+    pull(rhs) %>% c(0, .)
+  
+  modelAB <- list(
+    A = rbind(RouteAB$点数, cons.mx * 1) %>% as.matrix,
+    multiobj = list(
+      `1` = list(objn = RouteAB$timeTP,weight = 1,priority = 10),
+      `2` = list(objn = RouteAB$期望经验, weight = -1)
+    ),
+    rhs = c(n_point, cons.rhs),
+    sense = c('=', rep('<=', length(cons.rhs))),
+    vtype  = 'B'
+  )
+  
+  solveAB <- gurobi(modelAB)
+  
+  df <- RouteAB[solveAB$x %>% as.logical, ] 
+  
+  if (write_route) {
+    df %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) %>% 
+    write_xlsx(str_glue('./2.Result/Gurobi_Route_AandB_ver{n_point}p_{simpledate()}.xlsx'))
+  }
+  
+  return(df)
+  
+}
+
+df <- gurobi_solve_AB(166,write_route = T)
+
+# multi-player----
+
+# Multi Player Route 180
+
+must_R <- c(
+  '—石像4(?!—)',
+  '—石像5(?!—)',
+  '—望泷村1',
+  '—越石村1',
+  '—营地1—清籁丸1',
+  '—营地2—平海砦狸猫点',
+  '—营地3',
+  '—清籁洞口狸猫点—清籁丸北狸猫点',
+  '—狸猫3—雷1',
+  '—熔炉1',
+  '—高台1—炉心6',
+  '—洞1(?!—)'
+) %>% str_c(collapse = '|') %>% 
+  (\(x) RouteData %>% filter(str_detect(`路线`,x)))
+
+must_p <- must_R %>% pull(`路线`) %>% strsplit('—') %>% 
+  map(~ .x[-1]) %>% do.call(c,.) %>% c(.,'断桥1') %>% unique %>% 
+  (\(x) str_c('—', x, collapse = '|')) %>% str_c('|锚点',collapse = "")
+
+RouteData180 <- RouteData %>% filter(str_detect(`路线`,must_p,negate = T))
+
+cons.mx <- PointData %>% pull(`点位`) %>% set_names() %>% 
+  map(~ str_detect(RouteData180$`路线`,.x)) %>% do.call(rbind, .)
+
+modelmulti_180 <- list(
+  A = rbind(RouteData180$点数,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteData180$timeTP,weight = 1, priority = 10),
+    `2` = list(objn = RouteData180$`期望经验`,weight = -1)),
+  rhs = c(99, rep(1,nrow(cons.mx))),
+  sense = c('=', rep('<=',nrow(cons.mx))),
+  vtype  = 'B'
+)
+
+solve_multi_180 <- gurobi(modelmulti_180)
+
+Route_Multi_180 <- bind_rows(
+  RouteData180[as.logical(solve_multi_180$x), ],
+  must_R
+)
+
+Route_Multi_180 %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) %>% 
+  write_xlsx('./2.Result/Gurobi_Route_MultiPlayer.xlsx')
+
+# Consider Mora ----
+
+USE.MOUNT = F
+
+must_P <- c("—狸猫3—雷1","—熔炉1","—高台1—炉心6","—洞1(?!—)") %>% paste(collapse = '|')
+
+RouteData$`路线` %>% enframe %>% 
+  mutate(R_point = strsplit(value,'—') %>% map(~ .x[-1])) %>% 
+  unnest(R_point) %>% pull(R_point) %>% (\(x) x[duplicated(x)]) %>% unique
+
+dup_P <- c("嘉铭1","盗宝1","矿架2","吊机1","观测1","愚人1", "石厅路1","奥藏山3",
+           "华光林1","绝云间2","碧水原2","碧水原4","客栈2","石像1","藏宝洞1" ,
+           "水帘洞1","笈名1","知比1","清籁丸1","营地2","木船1","火1","狸猫5",
+           "炮1","雷1","熔炉1","炉心1")
+
+cons.mx <- c(must_P,'锚点',dup_P) %>% map_dfr(
+  ~ str_detect(RouteData$`路线`,.x) %>% set_names(1:nrow(RouteData))
+) %>% as.matrix
+
+model124 <- list(
+  A = rbind(RouteData$点数,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteData$timeTP, weight = 1),
+    `2` = list(objn = RouteData$`综合资源掉落`,weight = -1, priority = 2)),
+  rhs = c(124, 4, USE.MOUNT, rep(1,nrow(cons.mx) - 2)),
+  sense = c('=', '=', '=', rep('<=',nrow(cons.mx) - 2)),
+  vtype  = 'B'
+)
+
+solve124 <- gurobi(model124)
+
+Route124 <- RouteData[as.logical(solve124$x),] 
+
+Route124 %>% summarise(time = sum(timeTP)/60)
+
+RouteSupp <- Route124 %>% pull(`路线`) %>% strsplit('—') %>% 
+  map_dfr(~ data.frame(`点位` = .x[-1])) %>% left_join(PointData, by = '点位') %>% 
+  filter(刷新时间 == 24) %>% pull(`点位`) %>% str_c('—', ., collapse = "|") %>% 
+  (\(x) RouteData %>% filter(str_detect(`路线`,str_c(x,'|锚点'),negate = T)))
+
+cons.mx <- RouteSupp %>% pull(`路线`) %>% strsplit("—") %>% 
+  map(~.x[-1]) %>% unlist %>% unique %>% str_c("—",.) %>% 
+  map(~ str_detect(RouteSupp$`路线`,.x)) %>% do.call(rbind,.)
+
+modelSupp <- list(
+  A = rbind(RouteSupp$`点数`,cons.mx * 1) %>% as.matrix,
+  multiobj = list(
+    `1` = list(objn = RouteSupp$timeTP,weight = 1,priority = 100),
+    `2` = list(objn = RouteSupp$`综合资源掉落`,weight = -1)),
+  rhs = c(99 + max(RouteSupp$`点数`),rep(1,nrow(cons.mx))),
+  sense = c('=', rep('<=',nrow(cons.mx))),
+  vtype  = 'B'
+)
+
+solveSupp <- gurobi(modelSupp)
+
+list(
+  the_N = Route124 %>% mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify),
+  the_1 = RouteSupp[as.logical(solveSupp$x), ] %>% 
+    mutate(`路线` = `路线` %>% hex_decode %>% Route_simplify) 
+) %>% write_xlsx(str_glue('./2.Result/Gurobi_Route_Nplus1_ver124p_mora.include_{simpledate()}.xlsx'))
+
+
+
+

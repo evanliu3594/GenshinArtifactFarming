@@ -1,0 +1,29 @@
+library(tidyverse)
+
+POINTS <- clipr::read_clip()
+
+p_name <- POINTS %>% str_extract("(?<=### ).+") %>% na.omit()
+p_pic <- POINTS %>% str_extract("(?<=>  ?!\\[\\[).+(?=\\]{2}$)") %>% na.omit()
+
+.x = p_pic[1]; .y = p_name[1]
+
+walk2(
+  p_pic, 
+  p_name, 
+  ~ file.copy(
+    file.path(Sys.getenv("NJUBOX"),"OSB_idian/攻略区/Genshin_Impact/attachments", .x),
+    file.path(Sys.getenv("onedrive"),"Genshin Project/圣遗物狗粮/3.Pic/详细位置", str_c(.y,'.png'))
+  )
+)
+
+LootRate <- function(nomora, hasmora) {
+  c(rep(c(rep(1, 65), rep(2, 35)), nomora),
+    rep(c(rep(1, 50), rep(2, 50)), hasmora)) %>% 
+    sample(5E6, replace = T) %>% mean %>% round(3)
+}
+
+
+expand_grid(nomora = 0:9, hasmora = 0:9) %>% filter(!(nomora == 0 & hasmora == 0)) %>% 
+  mutate(mf = map2_dbl(nomora, hasmora, ~ LootRate(nomora = .x, hasmora = .y))) %>% clipr::write_clip()
+
+Sys.setenv(NJUBOX = "D:/NJUBOX/刘逸凡 DG19/我的资料库/")
