@@ -26,7 +26,7 @@ Route_restitute <- \(Route) Route %>% strsplit("—") %>% map_chr(~{
 
 # Data load----
 
-PointData <- read_xlsx('点位描述.xlsx', range = cell_cols("A:J")) %>%
+PointData <- read_xlsx('./1.Data/点位描述.xlsx', range = cell_cols("A:J")) %>%
   rename(`点位` = `编号`) %>% filter(`刷新周期` != '刷新周期') %>% 
   mutate(`点位` = `点位` %>% str_remove_all("（.+）") %>% hex_encode) %>% 
   mutate(`刷新周期` = if_else(`刷新周期` == "每日4点", "0", `刷新周期`)) %>% 
