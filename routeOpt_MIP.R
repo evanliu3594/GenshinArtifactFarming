@@ -109,7 +109,6 @@ getRouteData <- function(
   }
 }
 
-
 # Optim Core ====
 
 GeneralPlanning <- function(
