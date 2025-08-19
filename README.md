@@ -20,9 +20,7 @@
 install.packages(c(
   "tidyverse",
   "readxl",
-  "ompr",
-  "ompr.roi",
-  "ROI.plugin.glpk",
+  "lpSolve",
   "clipr"
 ))
 ```
