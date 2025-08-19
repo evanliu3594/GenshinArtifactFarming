@@ -83,9 +83,9 @@ install.packages(c(
 ### 3.`getPointData()`
 
 #### `Map`
-> 地图筛选参数，默认Map为`""`表示获取全部点位信息；Map海克威为"全部地表"：只保留六大主地图的数据；Map以"no"开头：排除指定主地图的数据；Map为其他非空值：只保留指定主地图的数据。地图的筛选需要依照`data/artifact-drop-spots.xlsx`中主地图一列的名称，支持`|`符号分割地图。
+> 地图筛选参数，默认Map为`""`表示获取全部点位信息；Map为"全部地表"：只保留六大主地图的数据；Map以"no"开头：排除后面的地图点位；Map为其他非空值：保留指定主地图点位。地图的筛选需要依照`data/artifact-drop-spots.xlsx`中主地图一列的名称，支持`|`符号分割地图。
 
 ## Supporting Information
-具体点位名称、位置、刷新时间、掉落等信息请见[我的NGA版头贴](https://nga.178.com/read.php?tid=27875210)
+具体点位名称、位置、刷新时间、掉落等信息请见[我的NGA攻略贴](https://nga.178.com/read.php?tid=27875210)
 
 一些现成的跑图路线攻略视频请见我的[Bilibili主页](https://space.bilibili.com/1897138)
